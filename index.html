@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DWM Interactive Planner</title>
+    <!-- Modern Web Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <!-- Dependencies -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <div class="header-content">
+                <h1>Dragon Warrior Monsters</h1>
+                <h2>Interactive Top-Down Breeding Planner</h2>
+            </div>
+        </header>
+
+        <main v-if="loading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading Breeding Data...</p>
+        </main>
+
+        <main v-else class="tree-viewer">
+            <div class="tree-viewport">
+                <!-- Start from the Target Root -->
+                <tree-node :node="treeRoot" @request-expand="handleExpandRequest"></tree-node>
+            </div>
+        </main>
+
+        <!-- Recipe Modal -->
+        <div class="modal-overlay" :class="{ active: showModal }" @click.self="showModal = false">
+            <div class="modal" v-if="modalType === 'recipe'">
+                <button class="close-btn" @click="showModal = false">&times;</button>
+                <h3 v-if="activeNode">Breeding options for {{ activeNode.name }}</h3>
+                <p class="subtitle" v-if="activeNode">Select a recipe group to lock in as parents.</p>
+
+                <div v-if="activeNode && monsterData[activeNode.name]?.recipe_groups?.length">
+                    <div v-for="group in monsterData[activeNode.name].recipe_groups" :key="group.group_id" class="recipe-group">
+                        <div class="group-header">
+                            <h4>Option {{ group.group_id }}</h4>
+                            <span class="badge">{{ group.pedigree_options.length }} Pedigree(s) &times; {{ group.secondary_options.length }} Secondary(s)</span>
+                        </div>
+                        <div class="recipe-cards">
+                            <!-- Show just the primary requirements for brevity -->
+                            <div class="recipe-card pedigree">
+                                <strong>Pedigree:</strong>
+                                <select class="dropdown-select" v-model="selectedPedigreeIdx[group.group_id]" v-if="group.pedigree_options.length > 1">
+                                    <option v-for="(opt, idx) in group.pedigree_options" :value="idx">
+                                        {{ opt.name }} {{ opt.min_plus ? `(+${opt.min_plus})` : '' }} {{ opt.kind === 'token' ? '[Class]' : '' }}
+                                    </option>
+                                </select>
+                                <div v-else class="single-option">
+                                    {{ group.pedigree_options[0].name }} {{ group.pedigree_options[0].min_plus ? `(+${group.pedigree_options[0].min_plus})` : '' }} {{ group.pedigree_options[0].kind === 'token' ? '[Class]' : '' }}
+                                </div>
+                            </div>
+                            <div class="recipe-card secondary">
+                                <strong>Secondary:</strong>
+                                <select class="dropdown-select" v-model="selectedSecondaryIdx[group.group_id]" v-if="group.secondary_options.length > 1">
+                                    <option v-for="(opt, idx) in group.secondary_options" :value="idx">
+                                        {{ opt.name }} {{ opt.min_plus ? `(+${opt.min_plus})` : '' }} {{ opt.kind === 'token' ? '[Class]' : '' }}
+                                    </option>
+                                </select>
+                                <div v-else class="single-option">
+                                    {{ group.secondary_options[0].name }} {{ group.secondary_options[0].min_plus ? `(+${group.secondary_options[0].min_plus})` : '' }} {{ group.secondary_options[0].kind === 'token' ? '[Class]' : '' }}
+                                </div>
+                            </div>
+                        </div>
+                        <button class="lock-in-btn" @click="lockInRecipe(group)">Lock In This Option</button>
+                    </div>
+                </div>
+                <div v-else-if="activeNode">
+                    <p class="no-recipe">This monster cannot be created via a specific recipe (or is a token/leaf).</p>
+                </div>
+            </div>
+
+            <!-- Wildcard Token Modal -->
+            <div class="modal" v-if="modalType === 'token'">
+                <button class="close-btn" @click="showModal = false">&times;</button>
+                <h3 v-if="activeNode">Resolve Wildcard [{{ activeNode.name }}]</h3>
+                <p class="subtitle" v-if="activeNode">Select a specific monster from the {{ activeNode.name }} family.</p>
+                
+                <div class="recipe-cards">
+                    <select class="dropdown-select" v-model="selectedTokenReplacement" size="10" style="margin-bottom: 1rem;">
+                        <option v-for="monsterName in tokenCandidates" :value="monsterName">
+                            {{ monsterName }}
+                        </option>
+                    </select>
+                </div>
+                <button class="lock-in-btn" @click="lockInToken" :disabled="!selectedTokenReplacement">Choose Monster</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recursive Tree Node Component Template -->
+    <template id="tree-node-template">
+        <div class="tree-node-wrapper">
+            <!-- The Card itself -->
+            <div class="monster-card" :class="[node.family ? node.family.toLowerCase() : '', node.kind, { active: isExpandable && !node.pedigree }]">
+                <div class="card-glass">
+                    <div class="family-badge" v-if="node.family">{{ node.family }}</div>
+                    <span class="kind-indicator" v-if="node.kind === 'token'">Wildcard</span>
+                    
+                    <h3 class="monster-name">{{ node.name }} 
+                        <span v-if="node.min_plus" class="min-plus">(Req: +{{ node.min_plus }})</span>
+                    </h3>
+                    
+                    <div class="stats-tracker">
+                        <div class="stat-input">
+                            <label>Lvl</label>
+                            <input type="number" min="10" max="99" v-model.number="node.userLevel" />
+                        </div>
+                        <div class="stat-input">
+                            <label>+</label>
+                            <span v-if="node.pedigree && node.secondary" class="computed-plus">+{{ $root.computePlus(node) }}</span>
+                            <input v-else type="number" min="0" max="99" v-model.number="node.userPlus" />
+                        </div>
+                    </div>
+
+                    <button class="expand-btn resolve-btn" v-if="node.kind === 'token'" @click="requestExpand">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Resolve Wildcard
+                    </button>
+
+                    <button class="expand-btn" v-if="isExpandable && !node.pedigree && node.kind !== 'token'" @click="requestExpand">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Add Parents
+                    </button>
+                    
+                    <button class="expand-btn danger" v-if="node.pedigree || node.secondary" @click="$root.clearChildren(node)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        Clear Parents
+                    </button>
+                </div>
+            </div>
+
+            <div class="connector-down" v-if="node.pedigree || node.secondary"></div>
+
+            <!-- Parents container -->
+            <div class="parents-container" v-if="node.pedigree || node.secondary">
+                <div class="parent-branch pedigree-branch" v-if="node.pedigree">
+                    <tree-node :node="node.pedigree" @request-expand="$emit('request-expand', $event)"></tree-node>
+                </div>
+                <div class="parent-branch secondary-branch" v-if="node.secondary">
+                    <tree-node :node="node.secondary" @request-expand="$emit('request-expand', $event)"></tree-node>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="app.js"></script>
+</body>
+</html>

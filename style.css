@@ -104,36 +104,47 @@ header h2 {
 .parents-container {
     display: flex;
     justify-content: center;
-    gap: 4rem; /* spacing between pedigree and secondary */
     position: relative;
+    /* Removed gap so branches touch exactly at the horizontal middle */
 }
 
-/* Connecting Lines */
-.parents-container::before {
-    content: '';
-    position: absolute;
-    top: -20px;
-    left: 25%;
-    right: 25%;
-    height: 2px;
-    background-color: var(--border-color);
-}
+/* We drop the simple percentages parents-container::before pseudo class */
 
 .parent-branch {
     position: relative;
-    padding-top: 40px;
+    padding: 20px 2rem 0 2rem; /* padding replaces the gap and margins */
 }
 
-/* Vertical line coming down to parent */
-.parent-branch::after {
+/* The vertical line down to each parent card */
+.parent-branch::before {
     content: '';
     position: absolute;
-    top: -20px; /* Connect from the horizontal line down */
+    top: 0;
     left: 50%;
-    width: 2px;
-    height: 60px;
-    background-color: var(--border-color);
+    border-left: 2px solid var(--border-color);
+    width: 0;
+    height: 20px;
     transform: translateX(-50%);
+}
+
+/* Horizontal line: pedigree draws line from its center extending right */
+.pedigree-branch::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 50%;
+    border-top: 2px solid var(--border-color);
+}
+
+/* Horizontal line: secondary draws line from its center extending left */
+.secondary-branch::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 50%;
+    width: 50%;
+    border-top: 2px solid var(--border-color);
 }
 
 .connector-down {

@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import difflib
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+try:
+    import yaml
+except ImportError as exc:
+    raise SystemExit('This script needs PyYAML. Install it with: pip install pyyaml') from exc
+
+DEFAULT_DB = Path(__file__).with_name('dwm_breeding.yml')
+
+
+def normalize_lookup_key(value: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '', value.lower())
+
+
+def load_db(path: Path) -> dict[str, Any]:
+    with path.open('r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def build_index(monsters: dict[str, Any]) -> dict[str, str]:
+    index: dict[str, str] = {}
+    for name, entry in monsters.items():
+        candidates = [name] + entry.get('aliases', [])
+        for candidate in candidates:
+            index[normalize_lookup_key(candidate)] = name
+    return index
+
+
+def resolve_name(query: str, monsters: dict[str, Any], index: dict[str, str]) -> str:
+    key = normalize_lookup_key(query)
+    if key in index:
+        return index[key]
+
+    close = difflib.get_close_matches(key, list(index.keys()), n=5, cutoff=0.6)
+    if close:
+        suggestions = ', '.join(sorted({index[c] for c in close}))
+        raise SystemExit(f"Unknown monster '{query}'. Closest matches: {suggestions}")
+    raise SystemExit(f"Unknown monster '{query}'.")
+
+
+def req_label(req: dict[str, Any]) -> str:
+    label = req['name'] if req['kind'] == 'monster' else f"[{req['name']}]"
+    if req.get('min_plus') is not None:
+        label += f" +{req['min_plus']}"
+    return label
+
+
+def is_expandable(req: dict[str, Any], monsters: dict[str, Any]) -> bool:
+    return req['kind'] == 'monster' and req['name'] in monsters and monsters[req['name']].get('has_specific_recipe', False)
+
+
+def print_lines(label: str, prefix_parts: list[bool], out_lines: list[str]) -> None:
+    pieces = []
+    for has_more in prefix_parts[:-1]:
+        pieces.append('│   ' if has_more else '    ')
+    if prefix_parts:
+        pieces.append('├── ' if prefix_parts[-1] else '└── ')
+    out_lines.append(''.join(pieces) + label)
+
+
+def render_grouped_node(
+    name: str,
+    monsters: dict[str, Any],
+    out_lines: list[str],
+    prefix_parts: list[bool],
+    path: list[str],
+    max_depth: int | None,
+) -> None:
+    entry = monsters[name]
+    base_label = f"{name} [{entry['family']}]"
+    if not entry.get('has_specific_recipe', False):
+        print_lines(base_label, prefix_parts, out_lines)
+        return
+
+    if name in path:
+        print_lines(f"{base_label} [cycle]", prefix_parts, out_lines)
+        return
+
+    print_lines(base_label, prefix_parts, out_lines)
+
+    if max_depth is not None and max_depth <= 0:
+        return
+
+    next_depth = None if max_depth is None else max_depth - 1
+    groups = entry.get('recipe_groups', [])
+    for group_index, group in enumerate(groups):
+        group_has_more = group_index < len(groups) - 1
+        print_lines(
+            f"recipe group {group['group_id']} ({len(group['pedigree_options'])} pedigree option(s) x {len(group['secondary_options'])} secondary option(s))",
+            prefix_parts + [group_has_more],
+            out_lines,
+        )
+
+        # pedigree branch
+        branch_prefix = prefix_parts + [group_has_more]
+        print_lines('pedigree', branch_prefix + [True], out_lines)
+        pedigree_prefix = branch_prefix + [True]
+        for idx, req in enumerate(group['pedigree_options']):
+            has_more = idx < len(group['pedigree_options']) - 1 or bool(group['secondary_options'])
+            if is_expandable(req, monsters):
+                render_grouped_node(req['name'], monsters, out_lines, pedigree_prefix + [has_more], path + [name], next_depth)
+            else:
+                print_lines(req_label(req), pedigree_prefix + [has_more], out_lines)
+
+        # secondary branch
+        print_lines('secondary', branch_prefix + [False], out_lines)
+        secondary_prefix = branch_prefix + [False]
+        for idx, req in enumerate(group['secondary_options']):
+            has_more = idx < len(group['secondary_options']) - 1
+            if is_expandable(req, monsters):
+                render_grouped_node(req['name'], monsters, out_lines, secondary_prefix + [has_more], path + [name], next_depth)
+            else:
+                print_lines(req_label(req), secondary_prefix + [has_more], out_lines)
+
+
+def render_expanded_node(
+    name: str,
+    monsters: dict[str, Any],
+    out_lines: list[str],
+    prefix_parts: list[bool],
+    path: list[str],
+    max_depth: int | None,
+) -> None:
+    entry = monsters[name]
+    base_label = f"{name} [{entry['family']}]"
+    if not entry.get('has_specific_recipe', False):
+        print_lines(base_label, prefix_parts, out_lines)
+        return
+
+    if name in path:
+        print_lines(f"{base_label} [cycle]", prefix_parts, out_lines)
+        return
+
+    print_lines(base_label, prefix_parts, out_lines)
+    if max_depth is not None and max_depth <= 0:
+        return
+
+    next_depth = None if max_depth is None else max_depth - 1
+    recipes = entry.get('recipes', [])
+    for recipe_index, recipe in enumerate(recipes):
+        recipe_has_more = recipe_index < len(recipes) - 1
+        print_lines(f"recipe {recipe['recipe_id']}", prefix_parts + [recipe_has_more], out_lines)
+        branch_prefix = prefix_parts + [recipe_has_more]
+
+        pedigree = recipe['pedigree']
+        secondary = recipe['secondary']
+
+        if is_expandable(pedigree, monsters):
+            render_expanded_node(pedigree['name'], monsters, out_lines, branch_prefix + [True], path + [name], next_depth)
+        else:
+            print_lines(f"pedigree: {req_label(pedigree)}", branch_prefix + [True], out_lines)
+
+        if is_expandable(secondary, monsters):
+            render_expanded_node(secondary['name'], monsters, out_lines, branch_prefix + [False], path + [name], next_depth)
+        else:
+            print_lines(f"secondary: {req_label(secondary)}", branch_prefix + [False], out_lines)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Print a text breeding tree for Dragon Warrior Monsters.')
+    parser.add_argument('target', help='Monster to expand')
+    parser.add_argument('--db', type=Path, default=DEFAULT_DB, help='Path to breeding YAML')
+    parser.add_argument('--max-depth', type=int, default=None, help='Maximum recursive depth to expand exact monsters')
+    parser.add_argument('--explode', action='store_true', help='Show every explicit recipe instead of grouped recipe sets')
+    args = parser.parse_args()
+
+    db = load_db(args.db)
+    monsters = db['monsters']
+    index = build_index(monsters)
+    target = resolve_name(args.target, monsters, index)
+
+    out_lines: list[str] = []
+    if args.explode:
+        render_expanded_node(target, monsters, out_lines, [], [], args.max_depth)
+    else:
+        render_grouped_node(target, monsters, out_lines, [], [], args.max_depth)
+
+    sys.stdout.write('\n'.join(out_lines) + '\n')
+
+
+if __name__ == '__main__':
+    main()

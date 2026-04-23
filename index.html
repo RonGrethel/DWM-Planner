@@ -150,6 +150,11 @@
                         <span v-if="node.min_plus" class="min-plus">(Req: +{{ node.min_plus }})</span>
                     </h3>
                     
+                    <div class="sprite-container" style="width: 80px; height: 80px; background: rgba(0,0,0,0.3); border-radius: 8px; margin: 0.5rem 0; display:flex; justify-content:center; align-items:center; overflow:hidden;">
+                        <img v-if="node.kind !== 'token'" :src="$root.getSpritePath(node.name)" :alt="node.name" style="max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated;" @error="$event.target.style.display='none'">
+                        <span v-else style="font-size:2rem; opacity:0.5; color: #94a3b8;">?</span>
+                    </div>
+                    
                     <div class="stats-summary" style="display:flex; justify-content:space-between; width:100%; font-size:0.8rem; color:#93c5fd; padding-top:0.5rem">
                        <span>Lvl: {{ node.userLevel }}</span>
                        <span style="font-weight:bold; color:#fca5a5">+{{ $root.computePlus(node) }}</span>

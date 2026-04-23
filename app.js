@@ -198,6 +198,11 @@ createApp({
             return stats;
         };
 
+        const getSpritePath = (name) => {
+            const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return `assets/sprites/${cleanName}.png`;
+        };
+
         onMounted(() => {
             loadData();
         });
@@ -220,7 +225,8 @@ createApp({
             lockInToken,
             clearChildren,
             computePlus,
-            getStartStats
+            getStartStats,
+            getSpritePath
         };
     }
 }).mount('#app');

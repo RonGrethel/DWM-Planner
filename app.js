@@ -1,5 +1,7 @@
 const { createApp, ref, onMounted, reactive } = Vue;
 
+const STAT_KEYS = ['HP', 'MP', 'ATK', 'DEF', 'AGI', 'INT'];
+
 // The UI component for the tree node
 const TreeNode = {
     name: 'tree-node',
@@ -7,13 +9,15 @@ const TreeNode = {
     props: ['node'],
     computed: {
         isExpandable() {
-            // It is expandable if we have data for it and it has specific recipes
             return this.$root.monsterData[this.node.name]?.has_specific_recipe;
         }
     },
     methods: {
         requestExpand() {
             this.$emit('request-expand', this.node);
+        },
+        openDetails() {
+            this.$emit('open-details', this.node);
         }
     }
 };
@@ -28,7 +32,7 @@ createApp({
         
         // Modal state
         const showModal = ref(false);
-        const modalType = ref(''); // 'recipe' or 'token'
+        const modalType = ref(''); // 'recipe', 'token', or 'details'
         const activeNode = ref(null);
         
         // Selections for recipe modal
@@ -39,13 +43,15 @@ createApp({
         const tokenCandidates = ref([]);
         const selectedTokenReplacement = ref(null);
 
-        // Our Initial Target in the Tree
+        const buildDefaultStats = () => ({ HP: 10, MP: 10, ATK: 10, DEF: 10, AGI: 10, INT: 10 });
+
         const treeRoot = ref({
             name: 'DarkDrium',
             kind: 'monster',
             family: 'Boss',
-            userLevel: 10,
+            userLevel: 99,
             userPlus: 0,
+            userStats: buildDefaultStats(),
             pedigree: null,
             secondary: null
         });
@@ -57,11 +63,9 @@ createApp({
                 const parsed = jsyaml.load(yamlText);
                 
                 monsterData.value = parsed.monsters;
-                
                 if (monsterData.value['DarkDrium']) {
                      treeRoot.value.family = monsterData.value['DarkDrium'].family;
                 }
-                
                 loading.value = false;
             } catch (err) {
                 console.error("Error loading YAML:", err);
@@ -71,11 +75,9 @@ createApp({
 
         const handleExpandRequest = (node) => {
             activeNode.value = node;
-            
             if (node.kind === 'token') {
                 modalType.value = 'token';
-                // Find all monsters of this family
-                const familyName = node.name; // e.g. 'SLIME'
+                const familyName = node.name;
                 const candidates = Object.keys(monsterData.value)
                     .filter(k => monsterData.value[k].family && monsterData.value[k].family.toUpperCase() === familyName.toUpperCase());
                 tokenCandidates.value = candidates.sort();
@@ -94,6 +96,12 @@ createApp({
             }
         };
 
+        const handleOpenDetails = (node) => {
+            activeNode.value = node;
+            modalType.value = 'details';
+            showModal.value = true;
+        };
+
         const lockInRecipe = (group) => {
             const pIdx = selectedPedigreeIdx[group.group_id] || 0;
             const sIdx = selectedSecondaryIdx[group.group_id] || 0;
@@ -101,7 +109,12 @@ createApp({
             const pOption = group.pedigree_options[pIdx];
             const sOption = group.secondary_options[sIdx];
             
-            const createNode = (opt) => {
+            const createNode = (opt, existingChild) => {
+                // Feature: PRESERVE subtree if the monster name doesn't change
+                if (existingChild && existingChild.name === opt.name) {
+                    return existingChild;
+                }
+
                 let family = '';
                 if (opt.kind === 'monster' && monsterData.value[opt.name]) {
                     family = monsterData.value[opt.name].family;
@@ -116,13 +129,14 @@ createApp({
                     family: family,
                     userLevel: 10,
                     userPlus: 0,
+                    userStats: buildDefaultStats(),
                     pedigree: null,
                     secondary: null
                 };
             };
 
-            activeNode.value.pedigree = createNode(pOption);
-            activeNode.value.secondary = createNode(sOption);
+            activeNode.value.pedigree = createNode(pOption, activeNode.value.pedigree);
+            activeNode.value.secondary = createNode(sOption, activeNode.value.secondary);
             
             showModal.value = false;
             activeNode.value = null;
@@ -141,12 +155,15 @@ createApp({
             activeNode.value = null;
         };
 
-        const clearChildren = (node) => {
-            node.pedigree = null;
-            node.secondary = null;
+        const clearChildren = () => {
+             if (activeNode.value) {
+                 activeNode.value.pedigree = null;
+                 activeNode.value.secondary = null;
+                 showModal.value = false;
+                 activeNode.value = null;
+             }
         };
 
-        // Recursive + computation
         const computePlus = (node) => {
             if (node.pedigree && node.secondary) {
                 const pPlus = computePlus(node.pedigree);
@@ -164,12 +181,23 @@ createApp({
                 else if (totalLevels >= 40) bonus = 2;
                 else if (totalLevels >= 20) bonus = 1;
                 
-                return base + bonus;
+                return Math.min(base + bonus, 99); // Clamp to 99!
             }
-            return node.userPlus || 0;
+            return Math.min(node.userPlus || 0, 99);
         };
 
-        // Initialize state
+        const getStartStats = (node) => {
+            const stats = { HP: 0, MP: 0, ATK: 0, DEF: 0, AGI: 0, INT: 0 };
+            if (node.pedigree && node.secondary) {
+                for(let key of STAT_KEYS) {
+                    const pVal = node.pedigree.userStats[key] || 0;
+                    const sVal = node.secondary.userStats[key] || 0;
+                    stats[key] = Math.floor((pVal + sVal) / 4);
+                }
+            }
+            return stats;
+        };
+
         onMounted(() => {
             loadData();
         });
@@ -177,6 +205,7 @@ createApp({
         return {
             loading,
             monsterData,
+            STAT_KEYS,
             treeRoot,
             showModal,
             modalType,
@@ -186,10 +215,12 @@ createApp({
             tokenCandidates,
             selectedTokenReplacement,
             handleExpandRequest,
+            handleOpenDetails,
             lockInRecipe,
             lockInToken,
             clearChildren,
-            computePlus
+            computePlus,
+            getStartStats
         };
     }
 }).mount('#app');

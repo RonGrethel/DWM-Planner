@@ -97,6 +97,43 @@
                 </div>
                 <button class="lock-in-btn" @click="lockInToken" :disabled="!selectedTokenReplacement">Choose Monster</button>
             </div>
+
+            <!-- Details Modal -->
+            <div class="modal" v-if="modalType === 'details' && activeNode">
+                <button class="close-btn" @click="showModal = false">&times;</button>
+                <h3>{{ activeNode.name }} Details</h3>
+                <p class="subtitle" style="margin-bottom: 0.5rem;">Edit ending stats and check computed start stats.</p>
+                
+                <div class="details-topbar" style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div class="stat-input" style="flex:0.5">
+                        <label>Level</label>
+                        <input type="number" min="1" max="99" v-model.number="activeNode.userLevel" />
+                    </div>
+                    <div class="stat-input" style="flex:0.5">
+                        <label>+</label>
+                        <span v-if="activeNode.pedigree && activeNode.secondary" class="computed-plus">+{{ computePlus(activeNode) }}</span>
+                        <input v-else type="number" min="0" max="99" v-model.number="activeNode.userPlus" />
+                    </div>
+                </div>
+
+                <div class="details-stats-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div v-for="stat in STAT_KEYS" :key="stat" style="background:rgba(0,0,0,0.2); padding: 0.8rem; border-radius:8px;">
+                        <span style="font-weight:bold; color:#94a3b8; width: 40px; display:inline-block;">{{ stat }}:</span>
+                        <span v-if="activeNode.pedigree && activeNode.secondary" style="color: #93c5fd; margin-right: 0.5rem;" title="Computed Start Stat">
+                            [S: {{ getStartStats(activeNode)[stat] }}]
+                        </span>
+                        <span style="float:right;">
+                           <label style="font-size:0.7rem; color:#64748b;">End:</label>
+                           <input type="number" v-model.number="activeNode.userStats[stat]" style="width: 60px; background:transparent; border:none; border-bottom:1px solid #334155; color:white; font-family:inherit; text-align:right;" />
+                        </span>
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                    <button class="lock-in-btn" v-if="activeNode.pedigree || activeNode.kind === 'token' || monsterData[activeNode.name]?.has_specific_recipe" @click="handleExpandRequest(activeNode)">Swap/Add Parents</button>
+                    <button class="lock-in-btn danger" v-if="activeNode.pedigree" @click="clearChildren">Clear Parents</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -105,7 +142,7 @@
         <div class="tree-node-wrapper">
             <!-- The Card itself -->
             <div class="monster-card" :class="[node.family ? node.family.toLowerCase() : '', node.kind, { active: isExpandable && !node.pedigree }]">
-                <div class="card-glass">
+                <div class="card-glass" @click="openDetails">
                     <div class="family-badge" v-if="node.family">{{ node.family }}</div>
                     <span class="kind-indicator" v-if="node.kind === 'token'">Wildcard</span>
                     
@@ -113,31 +150,19 @@
                         <span v-if="node.min_plus" class="min-plus">(Req: +{{ node.min_plus }})</span>
                     </h3>
                     
-                    <div class="stats-tracker">
-                        <div class="stat-input">
-                            <label>Lvl</label>
-                            <input type="number" min="10" max="99" v-model.number="node.userLevel" />
-                        </div>
-                        <div class="stat-input">
-                            <label>+</label>
-                            <span v-if="node.pedigree && node.secondary" class="computed-plus">+{{ $root.computePlus(node) }}</span>
-                            <input v-else type="number" min="0" max="99" v-model.number="node.userPlus" />
-                        </div>
+                    <div class="stats-summary" style="display:flex; justify-content:space-between; width:100%; font-size:0.8rem; color:#93c5fd; padding-top:0.5rem">
+                       <span>Lvl: {{ node.userLevel }}</span>
+                       <span style="font-weight:bold; color:#fca5a5">+{{ $root.computePlus(node) }}</span>
                     </div>
 
-                    <button class="expand-btn resolve-btn" v-if="node.kind === 'token'" @click="requestExpand">
+                    <button class="expand-btn resolve-btn" v-if="node.kind === 'token'" @click.stop="requestExpand">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         Resolve Wildcard
                     </button>
 
-                    <button class="expand-btn" v-if="isExpandable && !node.pedigree && node.kind !== 'token'" @click="requestExpand">
+                    <button class="expand-btn" v-if="isExpandable && !node.pedigree && node.kind !== 'token'" @click.stop="requestExpand">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         Add Parents
-                    </button>
-                    
-                    <button class="expand-btn danger" v-if="node.pedigree || node.secondary" @click="$root.clearChildren(node)">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        Clear Parents
                     </button>
                 </div>
             </div>

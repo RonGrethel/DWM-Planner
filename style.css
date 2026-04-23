@@ -1,11 +1,11 @@
 :root {
-    --bg-dark: #0f172a;
-    --bg-card: rgba(30, 41, 59, 0.7);
-    --border-color: rgba(148, 163, 184, 0.2);
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
+    --bg-dark: #1e3a8a;
+    --bg-card: rgba(30, 58, 138, 0.7);
+    --border-color: rgba(147, 197, 253, 0.3);
+    --text-primary: #eff6ff;
+    --text-secondary: #bfdbfe;
+    --accent: #60a5fa;
+    --accent-hover: #93c5fd;
     --boss-color: #ef4444;
     --slime-color: #3b82f6;
     --dragon-color: #10b981;
@@ -23,7 +23,7 @@ body {
     background-color: var(--bg-dark);
     color: var(--text-primary);
     min-height: 100vh;
-    background-image: radial-gradient(circle at 50% 0%, rgb(30, 41, 59) 0%, transparent 70%);
+    background-image: radial-gradient(circle at 50% 0%, #2563eb 0%, transparent 70%);
 }
 
 #app {
@@ -173,6 +173,7 @@ header h2 {
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
+    cursor: pointer;
 }
 
 .monster-card:hover {

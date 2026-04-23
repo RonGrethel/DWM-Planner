@@ -32,7 +32,7 @@
         <main v-else class="tree-viewer">
             <div class="tree-viewport">
                 <!-- Start from the Target Root -->
-                <tree-node :node="treeRoot" @request-expand="handleExpandRequest"></tree-node>
+                <tree-node :node="treeRoot" @request-expand="handleExpandRequest" @open-details="handleOpenDetails"></tree-node>
             </div>
         </main>
 
@@ -172,10 +172,10 @@
             <!-- Parents container -->
             <div class="parents-container" v-if="node.pedigree || node.secondary">
                 <div class="parent-branch pedigree-branch" v-if="node.pedigree">
-                    <tree-node :node="node.pedigree" @request-expand="$emit('request-expand', $event)"></tree-node>
+                    <tree-node :node="node.pedigree" @request-expand="$emit('request-expand', $event)" @open-details="$emit('open-details', $event)"></tree-node>
                 </div>
                 <div class="parent-branch secondary-branch" v-if="node.secondary">
-                    <tree-node :node="node.secondary" @request-expand="$emit('request-expand', $event)"></tree-node>
+                    <tree-node :node="node.secondary" @request-expand="$emit('request-expand', $event)" @open-details="$emit('open-details', $event)"></tree-node>
                 </div>
             </div>
         </div>
